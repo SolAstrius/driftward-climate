@@ -37,4 +37,37 @@ data class ClimateConfig(
     // ── reference state ───────────────────────────────────────────────────
     /** 15 °C — density normalisation anchor (ρ_norm = 1 at sea level, 15 °C). */
     val referenceTemperatureK: Float = 288.15f,
+
+    // ── solver (spec 01 §5) ───────────────────────────────────────────────
+    /**
+     * Solver Δt in seconds per step (cadence is the adapter's business).
+     * Semi-Lagrangian advection is STABLE at any CFL but loses sharp features
+     * when winds cross many cells per step — keep `u·dt/h ≲ O(1)`:
+     * at h = 16 m and gusts ~15 m/s, dt = 5 s ⇒ CFL ≈ 5. Don't crank this up.
+     */
+    val stepDtS: Float = 5f,
+    /** f-plane Coriolis parameter, rad/s. §2.1 signs: du=−f·v, dv=+f·u. */
+    val coriolisF: Float = 5e-4f,
+    /** Buoyancy/PGF strength: g (m/s²) over the reference θ. */
+    val gravity: Float = 9.81f,
+    /** Surface friction on the lowest layer, 1/s. */
+    val surfaceDragPerS: Float = 2e-3f,
+    /** Weak Rayleigh damping on all layers, 1/s (keeps winds bounded). */
+    val rayleighPerS: Float = 2e-5f,
+    /** Diffusivities, m²/s (explicit — stability-clamped internally). */
+    val kappaWind: Float = 0.5f,
+    val kappaTheta: Float = 0.5f,
+    val kappaMoisture: Float = 0.5f,
+    /** Newtonian relaxation of θ′/q_v toward the T1+T0 reconstruction, s. */
+    val relaxTauS: Float = 7200f,
+    /** Extra edge forcing: ramp width (cells) and time-scale (s) at the frontier. */
+    val edgeRelaxCells: Int = 3,
+    val edgeRelaxTauS: Float = 300f,
+    /** Cloud→rain autoconversion: threshold (kg/kg) and rate (1/s). */
+    val autoconvThresholdQc: Float = 8e-4f,
+    val autoconvRatePerS: Float = 1e-3f,
+    /** Rain-out: q_r removal rate, 1/s (reaches the ground reservoir later). */
+    val rainoutPerS: Float = 5e-4f,
+    /** Fraction of the saturation deficit that cloud evaporates per step. */
+    val cloudEvapFraction: Float = 0.5f,
 )

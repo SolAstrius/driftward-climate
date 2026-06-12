@@ -6,6 +6,7 @@
 
 plugins {
     id 'org.jetbrains.kotlin.jvm'   // version inherited from root
+    id 'me.champeau.jmh' version '0.7.2'   // benchmarks: ./gradlew :core:jmh
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
@@ -30,4 +31,14 @@ test {
     // SIMD hot loops target jdk.incubator.vector (incubator module). Scalar
     // fallback needs nothing; enable for SIMD-path tests/benchmarks:
     // jvmArgs '--add-modules', 'jdk.incubator.vector'
+}
+
+jmh {
+    // quick-feedback defaults; raise for publication-grade numbers
+    fork = 1
+    warmupIterations = 2
+    iterations = 3
+    timeOnIteration = '1s'
+    warmup = '1s'
+    benchmarkMode = ['thrpt']
 }

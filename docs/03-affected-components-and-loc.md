@@ -12,20 +12,23 @@
 **`core/src/main/kotlin/ink/astrius/driftwardclimate/core/`** (zero MC/NeoForge deps; tested by `:core:test`)
 | Path | LoC~ | Spec | Purpose |
 |---|---:|---|---|
-| `api/Ports.kt` | 80 | 01§11 | **D14 SPI:** TerrainPort, BaselinePort, SolarPort, SeasonPort, ClockPort |
+| `api/Ports.kt` | **74 ✅** | 01§11 | **D14 SPI:** TerrainPort, BaselinePort, SolarPort, SeasonPort, ClockPort |
 | `api/FieldContract.kt` | 60 | 05§3.5 | registerField/registerReaction/registerPointSource/readSnapshot/operators/derived |
-| `field/WorldFieldGrid.kt` | 200 | 05§1,§3.5 | **D12:** generic named-field registry, tier-aware reads |
-| `field/ClimateField.kt` | 250 | 01§3 | SoA region: `FloatArray` per field, `(cx,cz,layer)` indexing, double-buffer |
-| `field/NearFieldIndex.kt` | 150 | 05§2.3 | point-source index + query-time radiant kernel (`nearField`) |
-| `field/Operators.kt` | 300 | 01§4 | grad/div/curl/laplacian + semi-Lagrangian advect; Vector-API-ready |
-| `field/Projection.kt` | 250 | 01§5,§10 | **OQ2:** JTransforms FFT-Poisson (default) + SOR reference/fallback |
+| `field/WorldFieldGrid.kt` | **51 ✅** | 05§1,§3.5 | **D12:** façade: registry + region + near-field; `resolve()` = grid C1 + kernel |
+| `field/Fields.kt` | **60 ✅** | 05§3.5 | FieldDef / FieldHandle / freezing FieldRegistry *(split from the old ClimateField sketch)* |
+| `field/FieldRegion.kt` | **253 ✅** | 01§3,§9 | GridGeometry (layerY vertical), SoA double-buffer, Snapshot: C0/C1 sampling + **analytic spline gradient** |
+| `field/NearFieldIndex.kt` | **103 ✅** | 05§2.3 | per-chunk COW source index + Wendland C1 kernel |
+| `field/Operators.kt` | **426 ✅** | 01§4,§2.1 | 2D + **3D** stencils (grad/div/curl/∇²/ddy), semi-Lagrangian advect 2D/**3D**, diffuse, material derivative; conventions doc |
+| `field/VectorCalculus.kt` | **239 ✅** | 01§4 | **Helmholtz decomposition** (ψ/χ via Poisson), circulation/flux/area integrals (Stokes + divergence thms), **Okubo–Weiss** |
+| `field/Projection.kt` | **171 ✅** | 01§5,§10 | **OQ2:** JTransforms DCT FFT-Poisson (default, scale-pair verified) + red-black SOR reference |
 | `solver/AtmosphereSolver.kt` | 400 | 01§5 | step orchestration: forces→advect→diffuse→microphysics→project→relax |
 | `solver/Thermodynamics.kt` | 120 | 01§6 | θ↔T, ρ, q_sat (Tetens), latent heat, θ_v |
 | `model/Baseline.kt` | 180 | 01§8 | T0 static baseline math (cell targets + lapse + season/diurnal analytic) |
 | `model/Reconstruction.kt` | 80 | 06§3 | T1+T0+seeded-detail downscaling read path |
 | `tier/SynopticTier.kt` | 250 | 06§2,§5 | **D13:** T1 coarse grid — slow step, sleep/fast-forward, fold-on-shutdown, byte-payload persistence |
 | `config/ClimateConfig.kt` | 120 | 01§10 | plain data-class tunables (cadence, κ, f, layers, thresholds) |
-| *(tests)* `core/src/test/kotlin/…` | ~400 | 01§12 | the validation suite — not counted in shipping subtotal |
+| *(tests)* `core/src/test/kotlin/…` | **~1 050 ✅ (57 tests)** | 01§12 | operators (2D/3D), identities (curl∘grad, div∘curl @ machine-ε), Stokes + divergence thms, Helmholtz, projection (incl. FFT↔SOR cross-check), C0/C1/spline-gradient sampling, near-field, façade |
+| *(bench)* `core/src/jmh/kotlin/FieldEngineBench.kt` | **~180 ✅** | 01§10 | JMH: stencils, advect 2D/3D, FFT vs SOR projection, query path (`:core:jmh`) |
 
 **NeoForge mod (`src/main/`)** — thin adapter
 | Path | LoC~ | Spec | Purpose |

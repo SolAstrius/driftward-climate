@@ -32,6 +32,19 @@ emergent weather (no scripted events), native-free + heavily optimised.
 - **Spacing note:** interpolating across chunk centres caps the spatial gradient at
   `Δ(adjacent cells) / 16 blocks` — this is what removes the original border-descent.
 
+### 2.1 Coordinate & wind conventions (signs live HERE, nowhere else)
+
+Axes are Minecraft's: **+x = east** (sunrise), **+z = SOUTH**, **+y = up**. Winds are **axis-named,
+never geographic**: `u` = +x wind (happens to match "zonal", positive eastward); `v` = +z wind —
+positive **southward**, i.e. **−(meteorological meridional)** — we never use that name; `w` = up.
+- **Vorticity:** our `ζ = ∂v/∂x − ∂u/∂z` = **−ζ_met**; positive = clockwise from above
+  (= NH-anticyclonic). All "spin" diagnostics (Okubo–Weiss, storm detection) are sign-agnostic (ζ²).
+- **Coriolis on the f-plane, in THIS frame:** `du/dt = −f·v`, `dv/dt = +f·u` (translation of the
+  standard NH form through z→south). The geostrophic-balance test (§12) pins these signs.
+- **No meridians exist** — the world is an unbounded plane, so f is a constant config (f-plane).
+  *Future option (recorded, not v1):* a **β-plane** `f(z) = f₀ − β·z` fakes latitude along z —
+  poleward south, tropical north, Rossby waves emerge.
+
 ---
 
 ## 3. Fields (~12 volumetric + 6 surface)
@@ -64,14 +77,25 @@ emergent weather (no scripted events), native-free + heavily optimised.
 ## 4. Differential operators (hand-written stencils, central differences, h = 16)
 
 ```
-∇S    gradient    = ( (S[x+1]−S[x−1])/2h , (S[z+1]−S[z−1])/2h )
-∇·v   divergence  = (u[x+1]−u[x−1])/2h + (v[z+1]−v[z−1])/2h
-∇×v   curl/vort.  = (v[x+1]−v[x−1])/2h − (u[z+1]−u[z−1])/2h
-∇²S   Laplacian   = (S[x+1]+S[x−1]+S[z+1]+S[z−1] − 4S)/h²
-(v·∇)S advection  = semi-Lagrangian backtrace + bilinear sample
+∇S    gradient    = ( (S[x+1]−S[x−1])/2h , (S[z+1]−S[z−1])/2h )      (+ ∂/∂y over layerY → ∇₃)
+∇·v   divergence  = (u[x+1]−u[x−1])/2h + (v[z+1]−v[z−1])/2h          (+ ∂w/∂y → ∇·₃)
+∇×v   curl/vort.  = (v[x+1]−v[x−1])/2h − (u[z+1]−u[z−1])/2h          (ζ; full 3D (ξ,η,ζ) = curl3)
+∇²S   Laplacian   = (S[x+1]+S[x−1]+S[z+1]+S[z−1] − 4S)/h²            (+ non-uniform vertical → ∇²₃)
+(v·∇)S advection  = semi-Lagrangian backtrace + bi/trilinear sample   (2D and 3D with W)
 ```
 These are **not** a linalg problem — they're local stencils = tight allocation-free loops over flat
 arrays. No library expresses a 7-point Laplacian better. Vector-API-ready.
+
+**The theorem layer (`VectorCalculus`)** — built on the stencils + Poisson solvers, all test-pinned:
+- **Helmholtz decomposition**: `∇²ψ = ζ`, `∇²χ = δ` → wind = rotational + divergent parts. Powers
+  diagnosis (where is the storm-flow vs the convergent inflow) and is the textbook div/grad/curl payoff.
+- **Integral theorems as invariants**: discrete **Stokes** `∮v·dl = ∬ζ dA` and **divergence theorem**
+  `∮v·n̂ dl = ∬δ dA` (trapezoid line/area integrals); structural identities `∇×(∇f)=0`, `∇·(∇×F)=0`
+  hold at machine epsilon (central differences commute).
+- **Okubo–Weiss** `W = s_n²+s_s²−ζ²`: vortex (W<0) vs strain/front (W>0) discriminator — storm
+  detection for gameplay and the radio-QRN map.
+- **Analytic spline gradients**: `Snapshot.sampleGradC1` differentiates the Catmull–Rom interpolant —
+  consumers needing ∇P/∇N get a continuous gradient directly, never finite differences of samples.
 
 ---
 
@@ -79,7 +103,7 @@ arrays. No library expresses a 7-point Laplacian better. Vector-API-ready.
 
 Per solver step (fixed Δt, off main thread):
 ```
-1. add forces      dv += Δt·( −(1/ρ)∇P′  − f·(ẑ×v)  +  buoyancy(θ_v)  )   // PGF + Coriolis + buoyancy
+1. add forces      dv += Δt·( −(1/ρ)∇P′  + Coriolis(§2.1: du=−f·v, dv=+f·u)  +  buoyancy(θ_v) )
 2. advect          θ′,q_v,q_c,q_r,u,v  ←  semi-Lagrangian (unconditionally stable)
 3. diffuse         κ∇²·  (viscosity/thermal/moisture)
 4. microphysics    condensation/evaporation + latent heat + precip (see §6)

@@ -5,7 +5,14 @@ Standalone Kotlin **NeoForge 1.21.1** mod: a **server-authoritative atmospheric 
 stable-fluids solver. It feeds **Thermoo**'s ambient environment (so Scorchful/Frostiful work unchanged)
 and answers **Sable**'s air-pressure queries so Aeronautics buoyancy is climate-aware.
 
-**Status: scaffold only — no implementation code yet.**
+**Status: `core` field engine implemented** (registry, SoA double-buffered regions, 2D/3D operators,
+vector-calculus layer, FFT/SOR projection, near-field sources, C0/C1/spline-gradient sampling) with a
+57-test validation suite and JMH benchmarks. Solver, tiers and the NeoForge adapter are not started.
+
+```sh
+./gradlew :core:test   # validation suite — no Minecraft, no modloader
+./gradlew :core:jmh    # kernel benchmarks
+```
 
 ## Structure (D14: MC-less core)
 

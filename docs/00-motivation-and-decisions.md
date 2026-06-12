@@ -8,6 +8,7 @@
 > - `04-shared-field-substrate-and-radio.md` — the fields are reused by a future amateur-radio sim
 > - `05-field-contract-and-consumers.md` — the generic field-engine contract + all piggyback consumers
 > - `06-lod-and-world-scaling.md` — multi-resolution nesting: simulating the world without modelling it all
+> - `07-coupling-contracts.md` — the implicit made explicit: every coupling contract + its pinning test
 
 ---
 

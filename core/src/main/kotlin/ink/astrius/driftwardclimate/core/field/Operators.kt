@@ -130,6 +130,12 @@ object Operators {
      * per-layer horizontal (u,v in m/s); h converts to cell units. Backtrace
      * clamps to the domain (frontier inflow = boundary value, Neumann-style).
      * Unconditionally stable — no CFL blow-up.
+     *
+     * **RK2 (midpoint) backtrace:** a single straight chord lands on the
+     * wrong rotation ring under SHEARED flow — measured ~1%/step systematic
+     * flank erosion on a self-rotating anomaly. Sampling the wind at the
+     * half-step point first makes the trajectory 2nd-order; rigid AND
+     * differential rotation then conserve (coupling contract, docs 07).
      */
     fun advect(
         geom: GridGeometry,
@@ -150,27 +156,92 @@ object Operators {
                 val row = base + z * nx
                 for (x in 0 until nx) {
                     val i = row + x
-                    var px = x - u[i] * scale
-                    var pz = z - v[i] * scale
+                    // midpoint
+                    var mx = x - 0.5f * u[i] * scale
+                    var mz = z - 0.5f * v[i] * scale
+                    if (mx < 0f) mx = 0f else if (mx > maxX) mx = maxX
+                    if (mz < 0f) mz = 0f else if (mz > maxZ) mz = maxZ
+                    val uM = samplePlane(u, base, nx, nz, mx, mz)
+                    val vM = samplePlane(v, base, nx, nz, mx, mz)
+                    // full step with midpoint velocity
+                    var px = x - uM * scale
+                    var pz = z - vM * scale
                     if (px < 0f) px = 0f else if (px > maxX) px = maxX
                     if (pz < 0f) pz = 0f else if (pz > maxZ) pz = maxZ
-                    var x0 = px.toInt()
-                    var z0 = pz.toInt()
-                    if (x0 > nx - 2) x0 = nx - 2
-                    if (z0 > nz - 2) z0 = nz - 2
-                    val tx = px - x0
-                    val tz = pz - z0
-                    val i00 = base + z0 * nx + x0
-                    val v00 = src[i00]
-                    val v10 = src[i00 + 1]
-                    val v01 = src[i00 + nx]
-                    val v11 = src[i00 + nx + 1]
-                    val top = v00 + (v10 - v00) * tx
-                    val bot = v01 + (v11 - v01) * tx
-                    dst[i] = top + (bot - top) * tz
+                    dst[i] = samplePlane(src, base, nx, nz, px, pz)
                 }
             }
         }
+    }
+
+    /**
+     * BFECC advection (back-and-forth error compensated): three [advect]
+     * passes recover 2nd-order accuracy and cancel most semi-Lagrangian
+     * dissipation. Bilinear velocity is divergence-free only AT NODES — under
+     * any curved wind profile plain SL systematically compresses (measured
+     * ~1%/step mass loss on a self-rotating anomaly; rigid rotation is exact
+     * because linear wind interpolates exactly). BFECC restores the lost
+     * mass. Use for fields that must SURVIVE long advection (T1 anomalies);
+     * plain [advect] stays the cheap default inside the forced T2 loop.
+     */
+    fun advectBFECC(
+        geom: GridGeometry,
+        src: FloatArray,
+        u: FloatArray,
+        v: FloatArray,
+        dt: Float,
+        dst: FloatArray,
+        scratchA: FloatArray,
+        scratchB: FloatArray,
+    ) {
+        advect(geom, src, u, v, dt, scratchA)          // forward
+        advect(geom, scratchA, u, v, -dt, scratchB)    // back again
+        // compensate: φ* = φ + (φ − back(forward(φ)))/2, then advect
+        for (i in 0 until geom.cells) {
+            scratchB[i] = src[i] + 0.5f * (src[i] - scratchB[i])
+        }
+        advect(geom, scratchB, u, v, dt, dst)
+        // limiter: BFECC can overshoot — clamp to the local source extrema
+        val nx = geom.nx
+        val nz = geom.nz
+        for (l in 0 until geom.layers) {
+            val base = l * geom.planeSize
+            for (z in 0 until nz) {
+                val row = base + z * nx
+                val rowM = base + (if (z > 0) z - 1 else 0) * nx
+                val rowP = base + (if (z < nz - 1) z + 1 else nz - 1) * nx
+                for (x in 0 until nx) {
+                    val xm = if (x > 0) x - 1 else 0
+                    val xp = if (x < nx - 1) x + 1 else nx - 1
+                    var lo = src[row + x]
+                    var hi = lo
+                    val a = src[row + xm]; if (a < lo) lo = a else if (a > hi) hi = a
+                    val b = src[row + xp]; if (b < lo) lo = b else if (b > hi) hi = b
+                    val c = src[rowM + x]; if (c < lo) lo = c else if (c > hi) hi = c
+                    val d = src[rowP + x]; if (d < lo) lo = d else if (d > hi) hi = d
+                    val i = row + x
+                    if (dst[i] < lo) dst[i] = lo else if (dst[i] > hi) dst[i] = hi
+                }
+            }
+        }
+    }
+
+    /** Bilinear sample of one layer plane at fractional (px, pz), pre-clamped. */
+    private fun samplePlane(a: FloatArray, base: Int, nx: Int, nz: Int, px: Float, pz: Float): Float {
+        var x0 = px.toInt()
+        var z0 = pz.toInt()
+        if (x0 > nx - 2) x0 = nx - 2
+        if (z0 > nz - 2) z0 = nz - 2
+        val tx = px - x0
+        val tz = pz - z0
+        val i00 = base + z0 * nx + x0
+        val v00 = a[i00]
+        val v10 = a[i00 + 1]
+        val v01 = a[i00 + nx]
+        val v11 = a[i00 + nx + 1]
+        val top = v00 + (v10 - v00) * tx
+        val bot = v01 + (v11 - v01) * tx
+        return top + (bot - top) * tz
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -320,29 +391,47 @@ object Operators {
                 val row = base + z * nx
                 for (x in 0 until nx) {
                     val i = row + x
-                    var px = x - u[i] * scale
-                    var pz = z - v[i] * scale
-                    var pl = l - w[i] * dt * invDy
+                    // RK2 midpoint (see advect): half-step, sample wind there
+                    var mx = x - 0.5f * u[i] * scale
+                    var mz = z - 0.5f * v[i] * scale
+                    var ml = l - 0.5f * w[i] * dt * invDy
+                    if (mx < 0f) mx = 0f else if (mx > maxX) mx = maxX
+                    if (mz < 0f) mz = 0f else if (mz > maxZ) mz = maxZ
+                    if (ml < 0f) ml = 0f else if (ml > maxL) ml = maxL
+                    val uM = sampleVolume(u, nx, nz, layers, plane, mx, mz, ml)
+                    val vM = sampleVolume(v, nx, nz, layers, plane, mx, mz, ml)
+                    val wM = sampleVolume(w, nx, nz, layers, plane, mx, mz, ml)
+
+                    var px = x - uM * scale
+                    var pz = z - vM * scale
+                    var pl = l - wM * dt * invDy
                     if (px < 0f) px = 0f else if (px > maxX) px = maxX
                     if (pz < 0f) pz = 0f else if (pz > maxZ) pz = maxZ
                     if (pl < 0f) pl = 0f else if (pl > maxL) pl = maxL
-                    var x0 = px.toInt()
-                    var z0 = pz.toInt()
-                    var l0 = pl.toInt()
-                    if (x0 > nx - 2) x0 = nx - 2
-                    if (z0 > nz - 2) z0 = nz - 2
-                    if (l0 > layers - 2) l0 = layers - 2
-                    val tx = px - x0
-                    val tz = pz - z0
-                    val tl = pl - l0
-                    val iA = l0 * plane + z0 * nx + x0
-                    val iB = iA + plane
-                    val a = bilerp(src, iA, nx, tx, tz)
-                    val b = bilerp(src, iB, nx, tx, tz)
-                    dst[i] = a + (b - a) * tl
+                    dst[i] = sampleVolume(src, nx, nz, layers, plane, px, pz, pl)
                 }
             }
         }
+    }
+
+    /** Trilinear sample at fractional (px, pz, pl), pre-clamped. */
+    private fun sampleVolume(
+        a: FloatArray,
+        nx: Int,
+        nz: Int,
+        layers: Int,
+        plane: Int,
+        px: Float,
+        pz: Float,
+        pl: Float,
+    ): Float {
+        var l0 = pl.toInt()
+        if (l0 > layers - 2) l0 = layers - 2
+        val tl = pl - l0
+        val base = l0 * plane
+        val lo = samplePlane(a, base, nx, nz, px, pz)
+        val hi = samplePlane(a, base + plane, nx, nz, px, pz)
+        return lo + (hi - lo) * tl
     }
 
     /** dst = (v·∇)src — the advective/material-derivative term, central diffs (diagnostic). */

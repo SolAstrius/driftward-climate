@@ -70,4 +70,42 @@ data class ClimateConfig(
     val rainoutPerS: Float = 5e-4f,
     /** Fraction of the saturation deficit that cloud evaporates per step. */
     val cloudEvapFraction: Float = 0.5f,
+
+    // ── T2 mesoscale window (spec 06 §2/§4) ───────────────────────────────
+    /** T2 region size in chunks (the moving fine window). */
+    val t2Nx: Int = 48,
+    val t2Nz: Int = 48,
+    val t2Layers: Int = 4,
+    /** Don't move the window until the desired origin drifts this far (hysteresis). */
+    val windowMoveThresholdCells: Int = 6,
+    /** Velocity prefetch: window centre leads the player by v·lead (06 §4). */
+    val prefetchLeadS: Float = 10f,
+
+    // ── T1 synoptic tier (spec 06 §2/§5, D13) ─────────────────────────────
+    /** Chunks per T1 cell (16 ⇒ 256-block coarse cells, OQ7). */
+    val t1CellChunks: Int = 16,
+    /** T1 grid size in coarse cells (64 ⇒ ±8 km of weather around centre). */
+    val t1Nx: Int = 64,
+    val t1Nz: Int = 64,
+    /** T1 window centre, chunk coords (fixed world-window, OQ7 v1). */
+    val t1CenterChunkX: Int = 0,
+    val t1CenterChunkZ: Int = 0,
+    /** T1 step length, seconds (slow clock). */
+    val t1StepDtS: Float = 60f,
+    /** Synoptic forcing: amplitude (K), spatial scale (coarse cells), epoch length (s). */
+    val t1ForcingK: Float = 4f,
+    val t1ForcingScaleCells: Int = 8,
+    val t1ForcingPeriodS: Float = 3600f,
+    /** Relaxation time toward the evolving forcing target, s (~6 h). */
+    val t1ForcingTauS: Float = 21600f,
+    /**
+     * Anomaly-gradient → drift-wind gain, m²/(s·K). Sized for GENTLE drift:
+     * a 4 K system across 8 coarse cells → ~0.6 m/s (one cell per ~7 min).
+     * Hotter gains (2000+) spin systems ~0.5 rad/step → filamentation →
+     * semi-Lagrangian mass loss (measured: 85% of an anomaly destroyed in
+     * 60 steps). Keep coarse rotation ≲0.1 rad/step.
+     */
+    val t1WindGain: Float = 300f,
+    /** Edge taper width (coarse cells) — anomaly fades to 0 at the T1 frontier. */
+    val t1EdgeTaperCells: Int = 2,
 )

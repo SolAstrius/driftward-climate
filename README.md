@@ -34,6 +34,7 @@ The full design lives in [`docs/`](docs/):
 - `04-shared-field-substrate-and-radio.md` — shared field substrate; amateur radio as second reader
 - `05-field-contract-and-consumers.md` — generic field-engine contract, RAD/gas/near-field, all consumers
 - `06-lod-and-world-scaling.md` — T0/T1/T2 LoD nesting, rapid movement, persistence
+- `07-coupling-contracts.md` — **every cross-component contract + the test that pins it** (the tests are the executable spec; this is its index)
 
 ## Building
 

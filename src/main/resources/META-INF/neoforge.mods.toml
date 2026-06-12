@@ -1,0 +1,42 @@
+# SCAFFOLD ONLY — metadata stub. Loader/dep specifics to confirm during first build
+# (KFF loader vs javafml; see spec 03). No mixin configs listed yet (added when the
+# Sable hook lands).
+
+modLoader = "javafml"        # TODO: KFF may want "kotlinforforge"; confirm against chosen KFF version
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "driftwardclimate"
+version = "0.1.0"
+displayName = "Driftward Climate"
+description = "Server-authoritative atmospheric simulation (temperature, pressure, humidity, wind, clouds) on the chunk lattice. Feeds Thermoo's ambient environment and answers Sable's air-pressure queries for buoyancy."
+authors = "Sol"
+
+[[dependencies.driftwardclimate]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.driftwardclimate]]
+modId = "kotlinforforge"
+type = "required"
+versionRange = "[5,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.driftwardclimate]]
+modId = "thermoo"
+type = "optional"
+versionRange = "[0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.driftwardclimate]]
+modId = "sable"
+type = "optional"
+versionRange = "[0,)"
+ordering = "NONE"
+side = "BOTH"

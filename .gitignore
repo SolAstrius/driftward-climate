@@ -1,0 +1,11 @@
+/build/
+/.gradle/
+/libs/
+*.classpath
+*.project
+.idea/
+*.iml
+
+# editor swap files
+*.kate-swp
+*.swp

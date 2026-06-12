@@ -1,0 +1,49 @@
+// driftward-climate — standalone Kotlin NeoForge 1.21.1 climate-simulation mod.
+// SCAFFOLD ONLY: dependency/plugin versions below are first-pass and must be
+// pinned against the live toolchain before the first real build (see
+// docs/03-affected-components-and-loc.md "Build/versions" TODOs).
+
+plugins {
+    id 'net.neoforged.moddev' version '2.0.78'            // matches driftward-fixes
+    id 'org.jetbrains.kotlin.jvm' version '2.0.21'         // TODO: pin to the Kotlin bundled by the chosen KFF
+}
+
+version = '0.1.0'
+group = 'ink.astrius'
+base { archivesName = 'driftward-climate' }
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+kotlin { jvmToolchain(21) }
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://thedarkcolour.github.io/KotlinForForge/' }   // Kotlin for Forge (NeoForge build)
+}
+
+neoForge {
+    version = '21.1.233'                                    // matches driftward-fixes / server
+    mods {
+        driftwardclimate { sourceSet sourceSets.main }
+    }
+}
+
+dependencies {
+    // Kotlin runtime adapter for NeoForge. Ship as a separate pack mod OR jarJar it.
+    // TODO: confirm latest KFF that targets NeoForge 21.1.x.
+    implementation 'thedarkcolour:kotlinforforge-neoforge:5.6.0'
+
+    // Integration targets — compile-only, gitignored (drop jars in libs/, like driftward-fixes).
+    compileOnly files('libs/thermoo.jar')          // EnvironmentProvider API + registration
+    compileOnly files('libs/sable.jar')            // DimensionPhysicsData.getAirPressure hook target
+    compileOnly files('libs/sable-companion.jar')
+    compileOnly files('libs/aeronautics.jar')      // ServerBalloon (reference only; buoyancy reads Sable pressure)
+
+    // Optional pure-Java FFT backend for the Poisson projection (FFT-Poisson path).
+    // Native-free; ships clean. Uncomment when the FFT backend lands.
+    // implementation 'com.github.wendykierp:JTransforms:3.1'
+}
+
+// NOTE: the SIMD hot loops target the JDK Vector API (jdk.incubator.vector).
+// That is an INCUBATOR module — it needs `--add-modules jdk.incubator.vector` at
+// JVM launch (set via the launcher, which we control). Scalar fallback works without it.
+// See spec 01 "Math & performance strategy".

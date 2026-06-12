@@ -7,10 +7,20 @@ and answers **Sable**'s air-pressure queries so Aeronautics buoyancy is climate-
 
 **Status: scaffold only — no implementation code yet.**
 
+## Structure (D14: MC-less core)
+
+- **`core/`** — the simulation engine. **Pure Kotlin/JVM: zero Minecraft / NeoForge / mixin
+  dependencies.** Fields, operators, FFT-Poisson projection, solver, thermodynamics, LoD tiers,
+  near-field — all behind `api/Ports.kt` (terrain/baseline/solar/season/clock SPIs). Fully testable
+  standalone: `./gradlew :core:test` (the spec `01` §12 validation suite — no modloader needed).
+- **root (`src/`)** — the NeoForge mod: a thin adapter implementing core's ports
+  (heightmap/skylight sampling, biome targets, ES-aware sun, SavedData) plus the Thermoo provider
+  and the Sable pressure mixin.
+
 ## Spec
 
 The full design lives in [`docs/`](docs/):
-- `00-motivation-and-decisions.md` — why this exists, the journey, locked decisions D1–D13, open questions
+- `00-motivation-and-decisions.md` — why this exists, the journey, locked decisions D1–D14, OQ resolutions
 - `01-climate-mod-spec.md` — the simulation (lattice, fields, operators, solver, clouds, perf, validation)
 - `02-integration-spec.md` — Thermoo + Sable + Aeronautics wiring (verified signatures)
 - `03-affected-components-and-loc.md` — every file touched, with paths + LoC

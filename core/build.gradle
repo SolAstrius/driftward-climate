@@ -1,0 +1,33 @@
+// driftward-climate :core — the MC-less simulation engine (D14).
+// PURE Kotlin/JVM: zero Minecraft, NeoForge or mixin dependencies. The entire sim
+// (fields, operators, solver, thermodynamics, tiers, near-field) lives here and is
+// tested standalone: ./gradlew :core:test  (plain JUnit, no modloader, CI-able).
+// The root project (the NeoForge mod) is a thin adapter implementing api/Ports.kt.
+
+plugins {
+    id 'org.jetbrains.kotlin.jvm'   // version inherited from root
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+kotlin { jvmToolchain(21) }
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // OQ2 (resolved): FFT-Poisson projection backend. Pure-Java, native-free.
+    implementation 'com.github.wendykierp:JTransforms:3.1'
+
+    // Spec 01 §12 validation suite.
+    testImplementation 'org.jetbrains.kotlin:kotlin-test'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    // SIMD hot loops target jdk.incubator.vector (incubator module). Scalar
+    // fallback needs nothing; enable for SIMD-path tests/benchmarks:
+    // jvmArgs '--add-modules', 'jdk.incubator.vector'
+}

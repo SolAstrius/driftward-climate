@@ -37,8 +37,8 @@ through `∇N`, which the gradient stencil already produces. Tropo DX falls out 
    (radio wants `∇N` ⇒ `∇T/∇P/∇q`). Today these live in `field/Operators.kt` (internal) — promote a
    read API. Affects: `field/ClimateField.kt`, `field/Operators.kt`, `Atmosphere.kt`.
 3. **Solar/astronomy as its own service.** Sun zenith, day/night, season — consumed by **radiation**
-   (clouds/ground) *and* **ionosphere**. Factor out of `model/ExposureSampler.kt` /
-   `model/ChunkClimate.kt` into a shared `model/SolarForcing.kt` (new, ~80 LoC).
+   (clouds/ground) *and* **ionosphere**. Per D14 this is a **port**: core defines `SolarPort`
+   (`api/Ports.kt`); the mod implements it as `adapter/VanillaSolarAdapter.kt` (~50 LoC); tests stub it.
    **Source of truth = the vanilla accessors, not our own math:** Ecliptic Seasons overwrites
    `LevelTimeAccess.getTimeOfDay` with its seasonal celestial angle (long summer days / long winter
    nights — see 01 §7, 02 §D). `SolarForcing` wraps `level.getTimeOfDay()`/`getSunAngle()` so radiation
@@ -57,6 +57,9 @@ Climate alone tolerates 2.5D for a while. **Radio does not** — tropospheric du
   v1 runs only a few layers cheaply.
 - Re-weight **OQ5** toward "stacked Y-layers now," and treat the 2.5D→3D transition as the first
   post-v1 milestone rather than a distant maybe.
+
+> **OQ5 RESOLVED (user, 2026-06-12): stacked Y-layers from day one** — `(cx, cz, layer)`, ~4 layers
+> initial, config-tunable (01 §2). Radio's vertical requirement is satisfied in v1's grid shape.
 
 ---
 

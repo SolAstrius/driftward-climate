@@ -28,8 +28,14 @@ neoForge {
 }
 
 dependencies {
-    // Kotlin runtime adapter for NeoForge. Ship as a separate pack mod OR jarJar it.
-    // TODO: confirm latest KFF that targets NeoForge 21.1.x.
+    // D14: the MC-less simulation engine. All physics lives in :core; this module
+    // only adapts it to Minecraft (ports, registries, mixin).
+    // TODO before first release: bundle :core (+ JTransforms) into the mod jar
+    // for distribution (jarJar or shadow) — server/client must see ONE jar.
+    implementation project(':core')
+
+    // Kotlin runtime adapter for NeoForge. OQ4 (resolved): separate mod, already
+    // in the distro — NOT jarJar'd. TODO: pin to the distro's KFF version.
     implementation 'thedarkcolour:kotlinforforge-neoforge:5.6.0'
 
     // Integration targets — compile-only, gitignored (drop jars in libs/, like driftward-fixes).
@@ -37,10 +43,6 @@ dependencies {
     compileOnly files('libs/sable.jar')            // DimensionPhysicsData.getAirPressure hook target
     compileOnly files('libs/sable-companion.jar')
     compileOnly files('libs/aeronautics.jar')      // ServerBalloon (reference only; buoyancy reads Sable pressure)
-
-    // Optional pure-Java FFT backend for the Poisson projection (FFT-Poisson path).
-    // Native-free; ships clean. Uncomment when the FFT backend lands.
-    // implementation 'com.github.wendykierp:JTransforms:3.1'
 }
 
 // NOTE: the SIMD hot loops target the JDK Vector API (jdk.incubator.vector).

@@ -7,31 +7,42 @@
 
 ## 1. NEW — the standalone mod (`/home/sol/packwiz/driftward-climate/`)
 
-### Source (Kotlin unless noted)
-| Path (under `src/main/`) | LoC~ | Spec | Purpose |
+### Source — D14 module split: `core/` = pure Kotlin/JVM (MC-less), rest = the NeoForge mod
+
+**`core/src/main/kotlin/ink/astrius/driftwardclimate/core/`** (zero MC/NeoForge deps; tested by `:core:test`)
+| Path | LoC~ | Spec | Purpose |
 |---|---:|---|---|
-| `kotlin/.../DriftwardClimate.kt` | 60 | 01§11 | KFF `@Mod` object; register provider type + mixin; lifecycle hooks |
-| `kotlin/.../Atmosphere.kt` | 150 | 01§9 | Public query API (interp snapshot): temperature/pressure/density/humidity/cloud/wind |
-| `kotlin/.../field/WorldFieldGrid.kt` | 200 | 05§1,§3.5 | **D12:** generic named-field registry, tier-aware reads, consumer hooks |
-| `kotlin/.../field/ClimateField.kt` | 250 | 01§3,§11 | SoA region: `FloatArray` per field, indexing, double-buffer, swap |
-| `kotlin/.../field/NearFieldIndex.kt` | 150 | 05§2.3 | per-chunk point-source index + query-time radiant kernel (`nearField`) |
-| `kotlin/.../field/Operators.kt` | 300 | 01§4 | grad/div/curl/laplacian + semi-Lagrangian advect; Vector-API-ready |
-| `kotlin/.../field/Projection.kt` | 250 | 01§5,§10 | SOR/multigrid Poisson; optional JTransforms FFT backend |
-| `kotlin/.../solver/AtmosphereSolver.kt` | 400 | 01§5 | step orchestration: forces→advect→diffuse→microphysics→project→relax |
-| `kotlin/.../solver/Thermodynamics.kt` | 120 | 01§6 | θ↔T, ρ, q_sat (Tetens), latent heat, θ_v |
-| `kotlin/.../model/BiomeClimateMap.kt` | 120 | 01§8 | biome → θ/humidity targets (data-driven config) |
-| `kotlin/.../model/ChunkClimate.kt` | 180 | 01§8 | per-chunk static baseline (cache, season/time analytic) |
-| `kotlin/.../model/SolarForcing.kt` | 80 | 04§2.3 | shared sun/zenith/season service (radiation now, ionosphere later) |
-| `kotlin/.../model/ExposureSampler.kt` | 150 | 01§7 | heightmap + skylight per column; `solar`/`shelter`/`T_ground`; event-refresh |
-| `kotlin/.../runtime/RegionManager.kt` | 250 | 01§2, 06§4 | T2 moving-window lifecycle, velocity prefetch, off-thread step, buffer swap |
-| `kotlin/.../runtime/SynopticTier.kt` | 250 | 06§2,§5 | **D13:** T1 coarse grid — slow step, SavedData persistence, sleep/fast-forward, fold-on-shutdown |
-| `kotlin/.../runtime/BlockChangeListener.kt` | 60 | 01§7 | invalidate exposure profile on block events |
-| `kotlin/.../config/ClimateConfig.kt` | 120 | 01§10 | tunables (cadence, κ, Coriolis f, lapse, thresholds, enable flags) |
+| `api/Ports.kt` | 80 | 01§11 | **D14 SPI:** TerrainPort, BaselinePort, SolarPort, SeasonPort, ClockPort |
+| `api/FieldContract.kt` | 60 | 05§3.5 | registerField/registerReaction/registerPointSource/readSnapshot/operators/derived |
+| `field/WorldFieldGrid.kt` | 200 | 05§1,§3.5 | **D12:** generic named-field registry, tier-aware reads |
+| `field/ClimateField.kt` | 250 | 01§3 | SoA region: `FloatArray` per field, `(cx,cz,layer)` indexing, double-buffer |
+| `field/NearFieldIndex.kt` | 150 | 05§2.3 | point-source index + query-time radiant kernel (`nearField`) |
+| `field/Operators.kt` | 300 | 01§4 | grad/div/curl/laplacian + semi-Lagrangian advect; Vector-API-ready |
+| `field/Projection.kt` | 250 | 01§5,§10 | **OQ2:** JTransforms FFT-Poisson (default) + SOR reference/fallback |
+| `solver/AtmosphereSolver.kt` | 400 | 01§5 | step orchestration: forces→advect→diffuse→microphysics→project→relax |
+| `solver/Thermodynamics.kt` | 120 | 01§6 | θ↔T, ρ, q_sat (Tetens), latent heat, θ_v |
+| `model/Baseline.kt` | 180 | 01§8 | T0 static baseline math (cell targets + lapse + season/diurnal analytic) |
+| `model/Reconstruction.kt` | 80 | 06§3 | T1+T0+seeded-detail downscaling read path |
+| `tier/SynopticTier.kt` | 250 | 06§2,§5 | **D13:** T1 coarse grid — slow step, sleep/fast-forward, fold-on-shutdown, byte-payload persistence |
+| `config/ClimateConfig.kt` | 120 | 01§10 | plain data-class tunables (cadence, κ, f, layers, thresholds) |
+| *(tests)* `core/src/test/kotlin/…` | ~400 | 01§12 | the validation suite — not counted in shipping subtotal |
+
+**NeoForge mod (`src/main/`)** — thin adapter
+| Path | LoC~ | Spec | Purpose |
+|---|---:|---|---|
+| `kotlin/.../DriftwardClimate.kt` | 60 | 01§11 | KFF `@Mod` object; instantiates core, wires ports, registers provider type |
+| `kotlin/.../Atmosphere.kt` | 150 | 01§9 | façade: Level/BlockPos/°C ↔ core domain; C0/C1 interp policy |
+| `kotlin/.../adapter/LevelTerrainAdapter.kt` | 150 | 01§7 | TerrainPort impl: heightmap + skylight per column, event-refresh |
+| `kotlin/.../adapter/BiomeBaselineAdapter.kt` | 120 | 01§8 | BaselinePort impl: biome → θ/humidity targets (data-driven config) |
+| `kotlin/.../adapter/VanillaSolarAdapter.kt` | 50 | 01§7, 04§2.3 | SolarPort impl via `getTimeOfDay`/`getSunAngle` (ES-aware) + season via EclipticSeasonsApi |
+| `kotlin/.../adapter/RegionLifecycle.kt` | 200 | 06§4 | player tracking → core T2 window; velocity prefetch; off-thread step executor |
+| `kotlin/.../adapter/BlockChangeListener.kt` | 60 | 01§7 | invalidate exposure + near-field index on block events |
+| `kotlin/.../adapter/T1SavedData.kt` | 40 | 06§5 | SavedData/NBT wrapper around core's opaque T1 payloads |
 | `kotlin/.../integration/thermoo/AtmosphereEnvironmentProvider.kt` | 80 | 02§A.3 | `EnvironmentProvider` → TEMPERATURE + RELATIVE_HUMIDITY |
 | `kotlin/.../integration/thermoo/ClimateProviderTypes.kt` | 50 | 02§A.3 | register `driftwardclimate:atmosphere` type + MapCodec |
 | `java/.../mixin/sable/DimensionPhysicsPressureMixin.java` | 40 | 02§B.2 | `@Inject` HEAD `getAirPressure(Level,Vector3dc)` → `Atmosphere.pressureAt` |
-| *(later)* `kotlin/.../client/CloudRenderer.kt` | 300 | 01§6,OQ6 | render `q_c`; deferred past v1 |
-| **Source subtotal (v1, excl. client)** | **≈3 260** | | *(was ≈2 580 pre-D12/D13; +680 for WorldFieldGrid, NearFieldIndex, SolarForcing, SynopticTier)* |
+| *(later)* `kotlin/.../client/CloudRenderer.kt` | 300 | 01§6,OQ6 | render `q_c`; deferred past v1 (OQ6: server-sim only) |
+| **Source subtotal (v1, excl. client + tests)** | **≈3 440** | | *core ≈2 440 + mod ≈1 000* |
 
 ### Resources
 | Path (under `src/main/resources/`) | LoC~ | Spec | Purpose |
@@ -44,15 +55,17 @@
 | `data/driftwardclimate/thermoo/environment_provider/*.json` | ~few | 02§A | named provider instance(s) if used |
 
 ### Build / project (scaffolded, no code)
-`build.gradle` (~55) · `settings.gradle` (~8) · `gradle.properties` (~3) · `.gitignore` (~10) ·
-gradle wrapper (copied) · `libs/{thermoo,sable,sable-companion,aeronautics}.jar` (copied, gitignored).
+`build.gradle` (root, mod) · `core/build.gradle` (pure Kotlin/JVM + JTransforms + JUnit) ·
+`settings.gradle` (includes `core`) · `gradle.properties` · `.gitignore` · gradle wrapper (copied) ·
+`libs/{thermoo,sable,sable-companion,aeronautics}.jar` (copied, gitignored).
 
 **Build/versions TODO (before first build):**
 - Pin **Kotlin for Forge** version for NeoForge 21.1.x; confirm `modLoader` (`javafml` + KFF dep vs `kotlinforforge`).
 - Pin Kotlin plugin to KFF's bundled Kotlin.
-- Decide KFF packaging: separate pack mod vs jarJar (**OQ4**).
-- If FFT-Poisson: add `com.github.wendykierp:JTransforms:3.1` (commented stub present).
-- If Vector API SIMD: add `--add-modules jdk.incubator.vector` to launcher JVM args.
+- ~~Decide KFF packaging~~ **OQ4 resolved:** separate mod, already in the distro — pin version only.
+- ~~If FFT-Poisson~~ **OQ2 resolved:** `com.github.wendykierp:JTransforms:3.1` is an active `core` dependency.
+- **D14:** bundle `:core` into the mod jar for distribution (jarJar or shadow) — the server/client see ONE jar.
+- If Vector API SIMD: add `--add-modules jdk.incubator.vector` to launcher JVM args (tests too).
 
 ---
 
@@ -78,7 +91,7 @@ gradle wrapper (copied) · `libs/{thermoo,sable,sable-companion,aeronautics}.jar
 
 | Item | Action |
 |---|---|
-| `mods/` (packwiz) | **ADD** `driftward-climate` (`.pw.toml`) and **`kotlinforforge`** (KFF runtime), unless KFF jarJar'd |
+| `mods/` (packwiz) | **ADD** `driftward-climate` (`.pw.toml`); KFF already in the distro (OQ4) — verify/pin version only |
 | `kubejs/data/{thermoo,scorchful,frostiful}/tags/**` | **KEEP** — entity-interaction tags (foods/armor), orthogonal to ambient (02§D) |
 | `config/scorchful.json` | **KEEP** — its `minTemperatureForHeatC=30` etc. define the °C bands our provider must respect (02§A.2) |
 | Datapack overrides | Shipped **inside the climate jar** (`data/scorchful|frostiful/...`), so no separate pack datapack needed |

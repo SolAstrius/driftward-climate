@@ -21,9 +21,11 @@ emergent weather (no scripted events), native-free + heavily optimised.
 ## 2. The lattice
 
 - **Horizontal cell = 1 chunk** (h = 16 blocks). Indexed by `(cx, cz)`.
-- **Vertical:** v1 is **2.5D** — horizontal fields evolve on the 2D grid; vertical structure
-  (altitude lapse, heightmap/exposure) is a **static per-column profile**. Designed so a few stacked
-  Y-layers can be added later (→ true 3D, convection) without reshaping the API. *(OQ5)*
+- **Vertical (OQ5 resolved):** **a few stacked Y-layers from day one** — grid indexed `(cx, cz, layer)`,
+  layer count config-tunable (start ~4: surface / low / mid / high; exact spacing decided at impl).
+  Horizontal dynamics run per layer; layers couple via buoyancy + inter-layer mass exchange (`W`);
+  altitude lapse and heightmap/exposure feed the lowest layer. This is the cheap on-ramp to true 3D
+  convection and what radio's vertical refraction needs (`04` §3).
 - **Domain (= the T2 tier, see `06`):** a **moving window** around each player + velocity prefetch,
   per dimension. No global fine sim. Frontier boundary/forcing = the **downscaled T1 synoptic tier**
   (falls back to the T0 static baseline where T1 has no coverage) — see `06` §3.
@@ -89,6 +91,10 @@ Per solver step (fixed Δt, off main thread):
 - **Projection** enforces continuity; the **divergence it subtracts is the convergence/precip field**.
 - **Stability:** semi-Lagrangian advection has no CFL blow-up; diffusion explicit-stable if `κΔt/h² ≤ ¼`.
   Step cadence ~20–60 ticks (weather is slow), **double-buffered** so queries read a lock-free snapshot.
+- **Formulation (OQ3 resolved): prognostic primitive variables `{u,v}`** — what stable-fluids is built
+  on; `ζ`/`δ` are computed as **read-only diagnostics**, never time-stepped.
+- **Layered v1 (OQ5):** projection runs **per layer** (one 2D FFT-Poisson per layer); `W` is diagnosed
+  from inter-layer mass continuity rather than prognosed.
 
 ---
 
@@ -179,9 +185,11 @@ border-descent — now *plus* live wind.
 ## 10. Math & performance strategy (native-free)
 
 - **Operators + advection + SOR/multigrid:** ours, pure Kotlin over flat `FloatArray` SoA, allocation-free.
-- **The only real solver = Poisson projection:**
-  - default **geometric multigrid / red-black SOR** (stencil smoothing + restrict/prolong; ~150 LoC), or
-  - **FFT-Poisson via JTransforms** (pure-Java, O(N log N)) — `02`/`03` track it as optional. *(OQ2)*
+- **The only real solver = Poisson projection (OQ2 resolved): FFT-Poisson via JTransforms** —
+  pure-Java, O(N log N), DCT variants for non-periodic BCs; valid because the T2 window is rectangular
+  with uniform spacing **by construction**. Hand red-black SOR / multigrid (~150 LoC) is kept as the
+  **reference implementation** (tests cross-check FFT against it) and the fallback if a
+  non-rectangular domain ever appears.
 - **SIMD:** **JDK Vector API** (`jdk.incubator.vector`, Panama) for hot kernels — portable AVX/NEON,
   no JNI. Needs `--add-modules jdk.incubator.vector` at launch (we own the launcher); scalar loops
   (C2 autovectorised) are the fallback, not a prerequisite.
@@ -194,46 +202,62 @@ border-descent — now *plus* live wind.
 
 ---
 
-## 11. Module layout (Kotlin unless noted) — see `03` for LoC
+## 11. Module layout — D14: MC-less core + thin NeoForge adapter (see `03` for LoC)
+
+**D14 (user):** v1 is built **Minecraft-less first** — the `core` Gradle module is pure Kotlin/JVM with
+**zero Minecraft / NeoForge / mixin dependencies**, so the entire sim is testable and benchmarkable
+standalone (`./gradlew :core:test`, plain JUnit, CI without a modloader). The NeoForge mod is a thin
+adapter implementing core's **ports** and wiring registries/mixins.
+
+**Boundary rules:**
+- core speaks **doubles, SI units, packed cell indices** — no `Level` / `BlockPos` / `Biome` / `ResourceLocation`.
+- core is **deterministic and thread-agnostic** (pure state + step functions); the mod owns threads,
+  tick cadence and the off-thread executor. Determinism is what makes the §12 suite meaningful.
+- core persists T1 as **opaque byte payloads**; the mod wraps them in `SavedData`/NBT.
+- core **never computes a sun** — `SolarPort` is implemented by the mod via the vanilla accessors (§7, ES-aware).
 
 ```
-ink.astrius.driftwardclimate
-├─ DriftwardClimate.kt              entrypoint + wiring (KFF @Mod object)
-├─ Atmosphere.kt                    public query API (§9) — façade over the field contract (05 §3.5)
-├─ field/
-│   ├─ WorldFieldGrid.kt            generic named-field registry + tier-aware reads (D12, 05 §1/§3.5)
-│   ├─ ClimateField.kt              SoA region: FloatArrays + indexing + double-buffer
-│   ├─ Operators.kt                 grad/div/curl/laplacian/advect (Vector-API-ready)
-│   ├─ Projection.kt                SOR/multigrid (+ optional JTransforms FFT backend)
-│   └─ NearFieldIndex.kt            per-chunk sub-grid point-source index + query kernel (05 §2.3)
-├─ solver/
-│   ├─ AtmosphereSolver.kt          stable-fluids step orchestration (§5)
-│   └─ Thermodynamics.kt            θ↔T, ρ, q_sat, latent heat (§6)
-├─ model/
-│   ├─ BiomeClimateMap.kt           biome → θ/humidity targets (data-driven)
-│   ├─ ChunkClimate.kt              per-chunk static baseline = T0 (§8)
-│   ├─ SolarForcing.kt              shared sun/zenith/season service (04 §2.3) — radiation + ionosphere
-│   └─ ExposureSampler.kt           heightmap + skylight per column, event-refresh (§7)
-├─ runtime/
-│   ├─ RegionManager.kt             T2 moving-window lifecycle, off-thread step, buffer swap (06 §4)
-│   ├─ SynopticTier.kt              T1 coarse grid: slow step, SavedData persistence, sleep/fast-forward (06 §2/§5)
-│   └─ BlockChangeListener.kt       invalidate exposure + near-field index on block events
-├─ config/ClimateConfig.kt          tunables
-├─ integration/thermoo/             provider + type registration  (see 02)
-└─ mixin/sable/                     getAirPressure hook (Java)     (see 02)
+driftward-climate/
+├─ core/                                       ← PURE KOTLIN/JVM (D14)
+│  ├─ src/main/kotlin/ink/astrius/driftwardclimate/core/
+│  │   ├─ api/
+│  │   │   ├─ Ports.kt                 TerrainPort (surfaceY/solar/shelter/albedo/roughness/fuel per column),
+│  │   │   │                           BaselinePort (θ/humidity targets per cell), SolarPort (zenith/daylight),
+│  │   │   │                           SeasonPort, ClockPort — implemented by the mod, or by tests
+│  │   │   └─ FieldContract.kt         registerField / registerReaction / registerPointSource /
+│  │   │                               readSnapshot / operators / derived (05 §3.5) — the public surface
+│  │   ├─ field/                       WorldFieldGrid, ClimateField (SoA), Operators,
+│  │   │                               Projection (FFT-Poisson + SOR reference), NearFieldIndex
+│  │   ├─ solver/                      AtmosphereSolver, Thermodynamics
+│  │   ├─ model/                       Baseline (T0 math), tier reconstruction (06 §3)
+│  │   ├─ tier/                        SynopticTier (T1): coarse step, sleep/fast-forward, byte-payload persistence
+│  │   └─ config/                      plain data-class tunables
+│  └─ src/test/kotlin/…                the §12 validation suite (JUnit, no modloader)
+└─ src/main/                                   ← the NeoForge mod (thin adapter)
+   ├─ kotlin/ink/astrius/driftwardclimate/
+   │   ├─ DriftwardClimate.kt          KFF @Mod entry; instantiates core, wires ports
+   │   ├─ Atmosphere.kt                façade: Level/BlockPos/°C ↔ core domain (§9)
+   │   ├─ adapter/                     LevelTerrainAdapter (heightmap+skylight sampling, event-refresh),
+   │   │                               BiomeBaselineAdapter (biome→targets), VanillaSolarAdapter (§7, ES-aware),
+   │   │                               RegionLifecycle (player tracking → core window, off-thread step),
+   │   │                               BlockChangeListener, T1SavedData (NBT wrapper for core payloads)
+   │   └─ integration/thermoo/         provider + type registration  (see 02)
+   └─ java/ink/astrius/driftwardclimate/mixin/sable/   getAirPressure hook  (see 02)
 ```
 
 ---
 
 ## 12. Validation plan (write the checks *with* the solver, not after)
 
-Cheap analytic invariants — each is a unit test against the bare solver (no Minecraft), run on a
-synthetic grid:
+Cheap analytic invariants, each a unit test on a synthetic grid. **Per D14 the whole suite runs against
+the `core` module — `./gradlew :core:test`, plain JUnit, no modloader, no Minecraft, CI-able.** Test
+implementations of the ports (flat terrain, fixed sun, constant baseline) replace the MC adapters:
 
 | check | invariant | catches |
 |---|---|---|
 | **Uniform no-op** | uniform θ′,q, v=0, flat terrain → every step is an exact no-op (bit-stable) | sign errors, stray forcing, boundary leaks |
 | **Projection** | after step 5, `‖∇·v‖∞` ≤ tolerance on arbitrary v* | broken Poisson solve / stencil mismatch |
+| **FFT ↔ SOR cross-check** | both projection backends agree on a random RHS to tolerance (OQ2) | FFT boundary-condition / DCT-variant mistakes |
 | **Conservation budget** | Σ(q_v+q_c+q_r) constant under advect+microphysics (no sources, periodic BC); Σθ′ constant under pure advection | semi-Lagrangian mass loss, latent-heat double-count |
 | **Geostrophic balance** | initialise v ⟂ ∇P′ with `f·v = −(1/ρ)∇P′` → state holds steady | Coriolis/PGF sign or scale errors |
 | **Interpolation order** | sample `pressureAt` along a line crossing cell boundaries; assert value *and first difference* continuous (the §9 C1 requirement) | regression of the border-descent bug class |

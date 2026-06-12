@@ -5,3 +5,4 @@ pluginManagement {
     }
 }
 rootProject.name = 'driftward-climate'
+include 'core'   // D14: the MC-less simulation engine (pure Kotlin/JVM)

@@ -69,6 +69,7 @@ model." The path, in order, because each step's discovery forced the next:
 | D11 | **Field layer is a shared substrate**, not climate-private | A future **amateur-radio** sim reads the same `T/P/q`/heightmap/solar fields (refractivity `N`, ducting, ionosphere). Factor a `WorldFieldGrid` seam + public field/operator reads + shared solar service; radio = sibling mod. Raises the weight on **OQ5** (vertical layering — ducting is a vertical phenomenon). See `04`. |
 | D12 | **Generic field-engine built in v1** — named-field registry + operators + shared services; climate is plugin #1 | Radio/sound/pollution/fire/gas/scent become *registrations* (`registerField`/`registerReaction`/`registerPointSource`), never rewrites. Modest upfront cost vs. a refactor when consumer #2 arrives. See `05`. |
 | D13 | **Multi-resolution LoD tier stack:** T0 climatology (analytic, everywhere) → T1 synoptic (coarse, persisted) → T2 mesoscale (moving fine window) → near-field (sub-grid kernels) | The field is **world-anchored and exists everywhere** at some resolution; reads resolve to the finest covering tier; tiers agree at boundaries → no popping, graceful degradation under fast movement, "weather while away" via T1 persistence. See `06`. |
+| D14 | **MC-less core first (hexagonal):** the `core` Gradle module is **pure Kotlin/JVM — zero Minecraft / NeoForge / mixin APIs**; the NeoForge mod is a thin adapter implementing core's ports | The entire sim (fields, operators, solver, thermodynamics, tiers, near-field) is unit-/property-testable + benchmarkable standalone — plain JUnit, CI without a modloader; the `01` §12 suite runs as `:core:test`; modloader/MC churn can't touch the physics. See `01` §11. |
 
 ---
 
@@ -86,19 +87,32 @@ model." The path, in order, because each step's discovery forced the next:
 - "is heightmap always updated? does it update with structures built?" → **yes**, the live heightmaps
   (`MOTION_BLOCKING`, `MOTION_BLOCKING_NO_LEAVES`, `WORLD_SURFACE`, `OCEAN_FLOOR`) update incrementally
   on every block change (player + worldgen structures). `_WG` variants are gen-time snapshots — unused.
+- "for our v1 - i want a **complete MC-less version first, modloader AND minecraft apis independent**.
+  so we can completely test it all ourselves." → **D14**: pure-JVM `core` module + thin NeoForge adapter.
 
 ---
 
-## 4. Open questions / cut lines (decide before/with first code)
+## 4. Open questions — resolutions (user, 2026-06-12) & remaining
 
-- **OQ1 — v1 moisture:** carry the full 7 prognostic (incl. `q_v/q_c/q_r`, latent heat) from day one,
-  or dry-dynamics core first (4 advected fields) and switch moisture on later? *(Compute decision, not
-  memory — moisture ≈ doubles per-step work.)*
-- **OQ2 — Projection backend:** SOR/multigrid (hand, no dep, default) vs JTransforms FFT-Poisson.
-- **OQ3 — Vorticity formulation:** prognostic `{u,v}` advected, or vorticity–divergence `{ζ,δ}`.
-- **OQ4 — KFF packaging:** ship Kotlin-for-Forge as a separate pack mod (simplest) or jarJar into our jar.
-- **OQ5 — Vertical layering for "2.5D":** single column profile vs a few stacked Y-layers now (cheap path to 3D later).
-- **OQ6 — Cloud rendering:** server-sim only for v1 (gameplay: shade/rain), or also a client cloud renderer.
+### Resolved
+- **OQ1 — v1 moisture: FULL.** All 7 prognostic fields (incl. `q_v/q_c/q_r` + latent heat) from day one.
+  Compute cost accepted — clouds are a headline feature (D8); no dry-core interim.
+- **OQ2 — Projection backend: JTransforms FFT-Poisson.** Pure-Java, O(N log N); dependency now active in
+  `core`. Valid because the T2 window is rectangular + uniform-spacing **by construction** (DCT variants
+  for non-periodic BCs). Hand SOR/multigrid demoted to reference implementation (used by tests) + fallback.
+- **OQ3 — Vorticity formulation: prognostic `{u,v}` (primitive variables).** Stable-fluids (D4) is
+  formulated on velocity, so this was already implied; `ζ`/`δ` stay cheap **read-only diagnostics**
+  (storm detection, radio QRN), never time-stepped. The ζ–δ prognostic form is a spectral-model
+  refinement we don't need at h=16.
+- **OQ4 — KFF packaging: separate mod, NO jarJar** — KFF is already in the distro; just pin the version.
+- **OQ5 — Vertical layering: a few stacked Y-layers from day one.** Grid is `(cx, cz, layer)`, layer
+  count config-tunable (start ~4: surface / low / mid / high). Satisfies radio's vertical requirement
+  (`04` §3); v1 projection stays per-layer horizontal with `W` diagnosed from inter-layer continuity.
+- **OQ6 — Cloud rendering: server-sim only for v1.** `q_c` drives gameplay (shade, rain, radiation);
+  the client renderer stays a deferred post-v1 row in `03`.
+
+### Still open
+- **OQ7–OQ10** — LoD footprint / nesting direction / sleep model / seeded detail: see `06` §8.
 - **OQ11 — Near-field vs Thermoo contact heat:** v1 stance is **locked = augment** (our radiant near-field
   adds the radius effect Scorchful/Frostiful contact handlers miss; theirs stay). Open: later full takeover
   of `onFireWarmRate`/`inLavaWarmRate`/ice-cooling for one consistent model. *(See `02` §D, `05` §2.3.)*

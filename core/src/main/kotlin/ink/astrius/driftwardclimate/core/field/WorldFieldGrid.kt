@@ -32,6 +32,10 @@ class WorldFieldGrid {
     fun nearField(handle: FieldHandle): NearFieldIndex =
         nearFields.computeIfAbsent(handle.ordinal) { NearFieldIndex() }
 
+    /** Near-field kernel sum, 0 if no index exists for the field (no alloc). */
+    fun nearFieldSum(handle: FieldHandle, wx: Double, wy: Double, wz: Double): Float =
+        nearFields[handle.ordinal]?.sum(wx, wy, wz) ?: 0f
+
     /**
      * Resolve a field at world block coords (spec 05 §2.3):
      * grid sample (C1 by default — safe for differencing consumers) plus the
